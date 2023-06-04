@@ -92,15 +92,41 @@ size_t visited(void)
     return visited_elements_num;
 }
 
-void enqueue(void *)
-{
+void enqueue(void *elem)
+{   
+    /*TODO: what comes before, taking a lock or declarations*/
     mtx_lock(&q_lock);
-    if (waiting_threads_num)
+    thread_node* head;
+    if (waiting_threads_num > 0){
+        head = thread_queue->head;
+        thread_queue->head = head->prev;
+        if (thread_queue->head == NULL){
+            thread_queue->tail = NULL;
+        }
+        else {
+            thread_queue->head->next = NULL;
+        }
+        head -> elem = elem;
+        /*TODO: make the following op atomic and make sure when exactly a thread is not
+        considered to be waiting. It is imporatant that it is being done before waking
+        the thread. when does the new thread can run again? only after this function realeases
+        the lock or after sending the signal??*/
+        waiting_threads_num--;
+        cnd_signal(&(head->cv));
+    }
+    else{
+
+        
+    }
+    /*TODO: make the following op atomic. when does the new thread can run again? only after this function realeases
+    the lock or after sending the signal??*/
+    size++;
     mtx_unlock(&q_lock);
 }
 
 void *dequeue(void)
-{
+{   
+    /*TODO: what comes before, taking a lock or declarations*/
     mtx_lock(&q_lock);
     thread_node *t_node;
     q_node *head;
@@ -126,18 +152,21 @@ void *dequeue(void)
             threads_queue->tail = t_node;
         }
         cnd_wait(&(t_node->cv), &q_lock);
+        /*Returned from waiting*/
         dequeued_elem = t_node->elem;
         cnd_destroy(&(t_node->cv));
         free(t_node);
-        /*TODO: make the following op atomic and make sure when exactly a thread is not
-        considered to be waiting. Acttually I think this need to be done after sending the
-        signal and not here.*/
-        waiting_threads_num--;
     }
     else
     {
         head = main_q->head;
         main_q->head = head->prev;
+        if (main_q->head == NULL){
+            main_q -> tail = NULL;
+        }
+        else{
+            main_q->head->next = NULL;
+        }
         dequeued_elem = head->elem;
         free(head);
         /*TODO: make the following op atomic. I think not needed acctualy*/
