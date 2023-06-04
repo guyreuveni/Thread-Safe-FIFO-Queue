@@ -7,4 +7,5 @@
 #include "queue.h"
 
 atomic_size_t size = 0;
-atomic_size_t num_of_waiting_threads = 0;
+atomic_size_t waiting_threads_num = 0;
+atomic_size_t visited_elements_num = 0;
