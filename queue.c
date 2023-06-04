@@ -22,6 +22,7 @@ typedef struct queue
 typedef struct thread_node
 {
     cnd_t thread_cv;
+    void *elem;
     struct thread_node *next;
 } thread_node;
 
@@ -61,6 +62,8 @@ void destroyQueue(void)
 {
     /*TODO: make sure need to lock here*/
     mtx_lock(&q_lock);
+    /*TODO: implement free functions*/
+    /*TODO: can we assume free doesn't fail? we are allowed to assume that malloc doesn't*/
     free_main_q();
     free_threads_q();
     size = 0;
@@ -91,3 +94,17 @@ void enqueue(void *)
 
     mtx_unlock(&q_lock);
 }
+
+void *dequeue(void)
+{
+    mtx_lock(&q_lock);
+    /*TODO: maybe change to while*/
+    if (size <= waiting_threads_num)
+    {
+        /*Thread needs to got to sleep*/
+        thread_node * t_node = (thread_node*) malloc(sizeof(thread_node));
+    }
+    mtx_unlock(&q_lock);
+}
+
+bool tryDequeue(void **) {}
