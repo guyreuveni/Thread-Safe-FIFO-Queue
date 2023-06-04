@@ -69,3 +69,25 @@ void destroyQueue(void)
     mtx_unlock(&q_lock);
     mtx_destroy(&q_lock);
 }
+
+size_t size(void)
+{
+    return size;
+}
+
+size_t waiting(void)
+{
+    return waiting_threads_num;
+}
+
+size_t visited(void)
+{
+    return visited_elements_num;
+}
+
+void enqueue(void *)
+{
+    mtx_lock(&q_lock);
+
+    mtx_unlock(&q_lock);
+}
