@@ -21,7 +21,7 @@ typedef struct queue
 
 typedef struct thread_node
 {
-    cnd_t thread_cv;
+    cnd_t cv;
     void *elem;
     struct thread_node *next;
 } thread_node;
@@ -98,13 +98,33 @@ void enqueue(void *)
 void *dequeue(void)
 {
     mtx_lock(&q_lock);
+    thread_node *t_node;
+    void *dequeued_elem;
     /*TODO: maybe change to while*/
     if (size <= waiting_threads_num)
     {
-        /*Thread needs to got to sleep*/
-        thread_node * t_node = (thread_node*) malloc(sizeof(thread_node));
+        /*Thread needs to got to sleep. inserting it to the threads queue*/
+        t_node = (thread_node *)malloc(sizeof(thread_node));
+        cnd_init(&(t_node->cv));
+        t_node->elem = NULL : if (threads_queue->head == NULL)
+        {
+            /*threads queue is empty*/
+            threads_queue->head = t_node;
+            threads_queue->tail = t_node;
+            t_node->next = NULL;
+        }
+        else
+        {
+            t_node->next = threads_queue->tail;
+            threads_queue->tail = t_node;
+        }
+        cnd_wait(&(t_node->cv), &q_lock);
+        dequeued_elem = t_node->elem;
+        cnd_destroy(&(t_node->cv));
+        free(t_node);
     }
     mtx_unlock(&q_lock);
+    return dequeued_elem;
 }
 
 bool tryDequeue(void **) {}
