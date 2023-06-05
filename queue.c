@@ -18,7 +18,7 @@ typedef struct queue
 {
     q_node *head;
     q_node *tail;
-}queue;
+} queue;
 
 typedef struct thread_node
 {
@@ -32,10 +32,10 @@ typedef struct threads_queue
 {
     thread_node *head;
     thread_node *tail;
-}threads_queue;
+} threads_queue;
 
 /*TODO: not nessecirily need to be atomic types*/
-atomic_size_t size = 0;
+atomic_size_t full_size = 0;
 atomic_size_t waiting_threads_num = 0;
 atomic_size_t visited_elements_num = 0;
 atomic_size_t main_q_size = 0;
@@ -47,19 +47,19 @@ mtx_t q_lock;
 void insert_to_threads_q(thread_node *node)
 {
     node->prev = NULL;
-        if (threads_queue->head == NULL)
-        {
-            /*threads queue is empty*/
-            threads_queue->head = node;
-            threads_queue->tail = node;
-            node->next = NULL;
-        }
-        else
-        {
-            (threads_queue->tail)->prev = node;
-            node->next = threads_queue->tail;
-            threads_queue->tail = node;
-        }
+    if (waiting_threads_q->head == NULL)
+    {
+        /*threads queue is empty*/
+        waiting_threads_q->head = node;
+        waiting_threads_q->tail = node;
+        node->next = NULL;
+    }
+    else
+    {
+        (waiting_threads_q->tail)->prev = node;
+        node->next = waiting_threads_q->tail;
+        waiting_threads_q->tail = node;
+    }
 }
 
 void insert_to_main_q(q_node *new_node)
@@ -83,21 +83,22 @@ void insert_to_main_q(q_node *new_node)
 thread_node *pop_from_thread_q(void)
 {
     thread_node *head;
-    head = thread_queue->head;
-    thread_queue->head = head->prev;
-    if (thread_queue->head == NULL)
+    head = waiting_threads_q->head;
+    waiting_threads_q->head = head->prev;
+    if (waiting_threads_q->head == NULL)
     {
-        thread_queue->tail = NULL;
+        waiting_threads_q->tail = NULL;
     }
     else
     {
-        thread_queue->head->next = NULL;
+        waiting_threads_q->head->next = NULL;
     }
     return head;
 }
 
-q_node *pop_from_main_q(void){
-    q_node* head
+q_node *pop_from_main_q(void)
+{
+    q_node *head;
     head = main_q->head;
     main_q->head = head->prev;
     if (main_q->head == NULL)
@@ -123,7 +124,8 @@ void initQueue(void)
     waiting_threads_q = (threads_queue *)malloc(sizeof(threads_queue));
     waiting_threads_q->head = NULL;
     waiting_threads_q->tail = NULL;
-    size = 0;
+    full_size = 0;
+    main_q_size = 0;
     waiting_threads_num = 0;
     visited_elements_num = 0;
     mtx_unlock(&q_lock);
@@ -137,16 +139,18 @@ void destroyQueue(void)
     /*TODO: can we assume free doesn't fail? we are allowed to assume that malloc doesn't*/
     free_main_q();
     free_threads_q();
-    size = 0;
+    full_size = 0;
     waiting_threads_num = 0;
     visited_elements_num = 0;
+    main_q_size = 0;
     mtx_unlock(&q_lock);
     mtx_destroy(&q_lock);
 }
 
 size_t size(void)
 {
-    return size;
+    /*TODO: maybe cahnge to return main_q_size*/
+    return full_size;
 }
 
 size_t waiting(void)
@@ -185,7 +189,7 @@ void enqueue(void *elem)
         main_q_size++;
     }
     /*TODO: make the following op atomic.*/
-    size++;
+    full_size++;
     mtx_unlock(&q_lock);
 }
 
@@ -212,7 +216,7 @@ void *dequeue(void)
         free(t_node);
     }
     else
-    {   
+    {
         head = pop_from_main_q();
         dequeued_elem = head->elem;
         free(head);
@@ -222,7 +226,7 @@ void *dequeue(void)
     /*TODO: make the following ops atomic. is it ok to put these ops here? correctness wise
     of the functions that want the size*/
     visited_elements_num++;
-    size--;
+    full_size--;
     mtx_unlock(&q_lock);
     return dequeued_elem;
 }
@@ -240,7 +244,7 @@ bool tryDequeue(void **elem_pointer)
         /*TODO: make the following op atomic. I think not needed acctualy*/
         main_q_size--;
         /*TODO: make the following op atomic*/
-        size--;
+        full_size--;
         mtx_unlock(&q_lock);
         return true;
     }
