@@ -44,6 +44,29 @@ threads_queue *waiting_threads_q;
 
 mtx_t q_lock;
 
+void insert_to_threads_q(thread_node *node)
+{
+}
+
+void insert_to_main_q(q_node *node)
+{
+}
+
+thread_node *pop_from_thread_q(void)
+{
+    thread_node *head;
+    head = thread_queue->head;
+    thread_queue->head = head->prev;
+    if (thread_queue->head == NULL)
+    {
+        thread_queue->tail = NULL;
+    }
+    else
+    {
+        thread_queue->head->next = NULL;
+    }
+}
+
 void initQueue(void)
 {
     mtx_init(&q_lock, mtx_plain);
@@ -93,52 +116,63 @@ size_t visited(void)
 }
 
 void enqueue(void *elem)
-{   
+{
     /*TODO: what comes before, taking a lock or declarations*/
     mtx_lock(&q_lock);
-    thread_node* head;
-    if (waiting_threads_num > 0){
-        head = thread_queue->head;
-        thread_queue->head = head->prev;
-        if (thread_queue->head == NULL){
-            thread_queue->tail = NULL;
-        }
-        else {
-            thread_queue->head->next = NULL;
-        }
-        head -> elem = elem;
+    q_node *new_node;
+    thread_node *t_node;
+    if (waiting_threads_num > 0)
+    {
+        t_node = pop_from_thread_q();
+        t_node->elem = elem;
         /*TODO: make the following op atomic and make sure when exactly a thread is not
         considered to be waiting. It is imporatant that it is being done before waking
         the thread. when does the new thread can run again? only after this function realeases
         the lock or after sending the signal??*/
         waiting_threads_num--;
-        cnd_signal(&(head->cv));
+        cnd_signal(&(t_node->cv));
     }
-    else{
-
-        
+    else
+    {
+        new_node = (q_node *)malloc(sizeof(q_node));
+        new_node->elem = elem;
+        new_node->prev = NULL;
+        if (main_q->head == NULL)
+        {
+            /*main queue is empty*/
+            main_q->head = t_node;
+            main_q->tail = t_node;
+            new_node->next = NULL;
+        }
+        else
+        {
+            (main_q->tail)->prev = new_node;
+            new_node->next = main_q->tail;
+            main_q->tail = new_node;
+        }
+        /*TODO: make the following op atomic. I think not needed acctualy*/
+        main_q_size++;
     }
-    /*TODO: make the following op atomic. when does the new thread can run again? only after this function realeases
-    the lock or after sending the signal??*/
+    /*TODO: make the following op atomic.*/
     size++;
     mtx_unlock(&q_lock);
 }
 
 void *dequeue(void)
-{   
+{
     /*TODO: what comes before, taking a lock or declarations*/
     mtx_lock(&q_lock);
     thread_node *t_node;
     q_node *head;
     void *dequeued_elem;
-    /*TODO: maybe change to while*/
     if (main_q_size == 0)
     {
         /*Thread needs to got to sleep. inserting it to the threads queue*/
         t_node = (thread_node *)malloc(sizeof(thread_node));
         t_node->prev = NULL;
         cnd_init(&(t_node->cv));
-        t_node->elem = NULL : if (threads_queue->head == NULL)
+        t_node->elem = NULL;
+        if (threads_queue->head == NULL)
         {
             /*threads queue is empty*/
             threads_queue->head = t_node;
@@ -151,7 +185,8 @@ void *dequeue(void)
             t_node->next = threads_queue->tail;
             threads_queue->tail = t_node;
         }
-        cnd_wait(&(t_node->cv), &q_lock);
+        /*TODO: maybe do this op eariler. make it atomic anyway*/
+        waiting_threads_num++ cnd_wait(&(t_node->cv), &q_lock);
         /*Returned from waiting*/
         dequeued_elem = t_node->elem;
         cnd_destroy(&(t_node->cv));
@@ -161,10 +196,12 @@ void *dequeue(void)
     {
         head = main_q->head;
         main_q->head = head->prev;
-        if (main_q->head == NULL){
-            main_q -> tail = NULL;
+        if (main_q->head == NULL)
+        {
+            main_q->tail = NULL;
         }
-        else{
+        else
+        {
             main_q->head->next = NULL;
         }
         dequeued_elem = head->elem;
@@ -172,10 +209,40 @@ void *dequeue(void)
         /*TODO: make the following op atomic. I think not needed acctualy*/
         main_q_size--;
     }
-    /*TODO: make the following op atomic*/
-    visited_elements_num--;
+    /*TODO: make the following ops atomic. is it ok to put these ops here? correctness wise
+    of the functions that want the size*/
+    visited_elements_num++;
+    size--;
     mtx_unlock(&q_lock);
     return dequeued_elem;
 }
 
-bool tryDequeue(void **) {}
+bool tryDequeue(void **elem_pointer)
+{
+    mtx_lock(&q_lock);
+    q_node *head;
+
+    if (main_q_size > 0)
+    {
+        head = main_q->head;
+        main_q->head = head->prev;
+        if (main_q->head == NULL)
+        {
+            main_q->tail = NULL;
+        }
+        else
+        {
+            main_q->head->next = NULL;
+        }
+        elem_pointer = &(head->elem);
+        free(head);
+        /*TODO: make the following op atomic. I think not needed acctualy*/
+        main_q_size--;
+        /*TODO: make the following op atomic*/
+        size--;
+        mtx_unlock(&q_lock);
+        return true;
+    }
+    mtx_unlock(&q_lock);
+    return false;
+}
