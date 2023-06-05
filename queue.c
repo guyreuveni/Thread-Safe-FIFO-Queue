@@ -47,7 +47,8 @@ mtx_t q_lock;
 
 void free_main_q(void)
 {
-    q_node *node, *next = main_q->tail;
+    q_node *node, *next;
+    node = main_q->tail;
     while (node != NULL)
     {
         next = node->next;
@@ -60,12 +61,14 @@ void free_main_q(void)
 
 void free_threads_q(void)
 {
-    thread_node *node, *next = waiting_threads_q->tail;
+    thread_node *node, *next;
+    node = waiting_threads_q->tail;
     while (node != NULL)
     {
         next = node->next;
-        node -> legal = false;
-        cnd_signal(&(t_node->cv));
+        node->legal = false;
+        node->elem = NULL;
+        cnd_signal(&(node->cv));
         free(node);
         node = next;
     }
@@ -203,7 +206,7 @@ void enqueue(void *elem)
     {
         t_node = pop_from_thread_q();
         t_node->elem = elem;
-        t_node -> legal = true;
+        t_node->legal = true;
         /*TODO: make the following op atomic and make sure when exactly a thread is not
         considered to be waiting. It is imporatant that it is being done before waking
         the thread. when does the new thread can run again? only after this function realeases
@@ -237,7 +240,6 @@ void *dequeue(void)
         /*Thread needs to got to sleep. inserting it to the threads queue*/
         t_node = (thread_node *)malloc(sizeof(thread_node));
         cnd_init(&(t_node->cv));
-        t_node->elem = NULL;
         insert_to_threads_q(t_node);
         /*TODO: maybe do this op eariler. make it atomic anyway*/
         waiting_threads_num++;
@@ -256,11 +258,12 @@ void *dequeue(void)
         /*TODO: make the following op atomic. I think not needed acctualy*/
         main_q_size--;
     }
-    if (legal_pop){
-    /*TODO: make the following ops atomic. is it ok to put these ops here? correctness wise
-    of the functions that want the size*/
-    visited_elements_num++;
-    full_size--;
+    if (legal_pop)
+    {
+        /*TODO: make the following ops atomic. is it ok to put these ops here? correctness wise
+        of the functions that want the size*/
+        visited_elements_num++;
+        full_size--;
     }
     mtx_unlock(&q_lock);
     return dequeued_elem;
