@@ -24,6 +24,7 @@ typedef struct thread_node
 {
     cnd_t cv;
     void *elem;
+    bool legal;
     struct thread_node *next;
     struct thread_node *prev;
 } thread_node;
@@ -43,6 +44,34 @@ queue *main_q;
 threads_queue *waiting_threads_q;
 
 mtx_t q_lock;
+
+void free_main_q(void)
+{
+    q_node *node, *next = main_q->tail;
+    while (node != NULL)
+    {
+        next = node->next;
+        free(node);
+        node = next;
+    }
+    main_q->tail = NULL;
+    main_q->head = NULL;
+}
+
+void free_threads_q(void)
+{
+    thread_node *node, *next = waiting_threads_q->tail;
+    while (node != NULL)
+    {
+        next = node->next;
+        node -> legal = false;
+        cnd_signal(&(t_node->cv));
+        free(node);
+        node = next;
+    }
+    waiting_threads_q->tail = NULL;
+    waiting_threads_q->head = NULL;
+}
 
 void insert_to_threads_q(thread_node *node)
 {
@@ -114,6 +143,7 @@ q_node *pop_from_main_q(void)
 
 void initQueue(void)
 {
+    /*TODO: sinc the init and destroy funcs*/
     mtx_init(&q_lock, mtx_plain);
     /*TODO: make sure need to lock here. and if tes, what to do if another thread does insertion
     before initQueue gets the lock*/
@@ -173,6 +203,7 @@ void enqueue(void *elem)
     {
         t_node = pop_from_thread_q();
         t_node->elem = elem;
+        t_node -> legal = true;
         /*TODO: make the following op atomic and make sure when exactly a thread is not
         considered to be waiting. It is imporatant that it is being done before waking
         the thread. when does the new thread can run again? only after this function realeases
@@ -200,6 +231,7 @@ void *dequeue(void)
     thread_node *t_node;
     q_node *head;
     void *dequeued_elem;
+    bool legal_pop = true;
     if (main_q_size == 0)
     {
         /*Thread needs to got to sleep. inserting it to the threads queue*/
@@ -212,6 +244,7 @@ void *dequeue(void)
         cnd_wait(&(t_node->cv), &q_lock);
         /*Returned from waiting*/
         dequeued_elem = t_node->elem;
+        legal_pop = t_node->legal;
         cnd_destroy(&(t_node->cv));
         free(t_node);
     }
@@ -223,10 +256,12 @@ void *dequeue(void)
         /*TODO: make the following op atomic. I think not needed acctualy*/
         main_q_size--;
     }
+    if (legal_pop){
     /*TODO: make the following ops atomic. is it ok to put these ops here? correctness wise
     of the functions that want the size*/
     visited_elements_num++;
     full_size--;
+    }
     mtx_unlock(&q_lock);
     return dequeued_elem;
 }
