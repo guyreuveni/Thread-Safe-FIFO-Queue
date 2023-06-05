@@ -18,6 +18,7 @@ typedef struct queue
 {
     q_node *head;
     q_node *tail;
+    atomic_size_t size;
 } queue;
 
 typedef struct thread_node
@@ -33,36 +34,38 @@ typedef struct threads_queue
 {
     thread_node *head;
     thread_node *tail;
+    atomic_size_t size;
 } threads_queue;
 
 /*TODO: not nessecirily need to be atomic types*/
 atomic_size_t full_size = 0;
-atomic_size_t waiting_threads_num = 0;
+/*TODO: delete those in comments*/
+/*atomic_size_t waiting_threads_q.size = 0;*/
 atomic_size_t visited_elements_num = 0;
-atomic_size_t main_q_size = 0;
-queue *main_q;
-threads_queue *waiting_threads_q;
+/*atomic_size_t main_q.size = 0;*/
+queue main_q;
+threads_queue waiting_threads_q;
 
 mtx_t q_lock;
 
 void free_main_q(void)
 {
     q_node *node, *next;
-    node = main_q->tail;
+    node = main_q.tail;
     while (node != NULL)
     {
         next = node->next;
         free(node);
         node = next;
     }
-    main_q->tail = NULL;
-    main_q->head = NULL;
+    main_q.tail = NULL;
+    main_q.head = NULL;
 }
 
 void free_threads_q(void)
 {
     thread_node *node, *next;
-    node = waiting_threads_q->tail;
+    node = waiting_threads_q.tail;
     while (node != NULL)
     {
         next = node->next;
@@ -72,58 +75,58 @@ void free_threads_q(void)
         free(node);
         node = next;
     }
-    waiting_threads_q->tail = NULL;
-    waiting_threads_q->head = NULL;
+    waiting_threads_q.tail = NULL;
+    waiting_threads_q.head = NULL;
 }
 
 void insert_to_threads_q(thread_node *node)
 {
     node->prev = NULL;
-    if (waiting_threads_q->head == NULL)
+    if (waiting_threads_q.head == NULL)
     {
         /*threads queue is empty*/
-        waiting_threads_q->head = node;
-        waiting_threads_q->tail = node;
+        waiting_threads_q.head = node;
+        waiting_threads_q.tail = node;
         node->next = NULL;
     }
     else
     {
-        (waiting_threads_q->tail)->prev = node;
-        node->next = waiting_threads_q->tail;
-        waiting_threads_q->tail = node;
+        (waiting_threads_q.tail)->prev = node;
+        node->next = waiting_threads_q.tail;
+        waiting_threads_q.tail = node;
     }
 }
 
 void insert_to_main_q(q_node *new_node)
 {
     new_node->prev = NULL;
-    if (main_q->head == NULL)
+    if (main_q.head == NULL)
     {
         /*main queue is empty*/
-        main_q->head = new_node;
-        main_q->tail = new_node;
+        main_q.head = new_node;
+        main_q.tail = new_node;
         new_node->next = NULL;
     }
     else
     {
-        (main_q->tail)->prev = new_node;
-        new_node->next = main_q->tail;
-        main_q->tail = new_node;
+        (main_q.tail)->prev = new_node;
+        new_node->next = main_q.tail;
+        main_q.tail = new_node;
     }
 }
 
 thread_node *pop_from_thread_q(void)
 {
     thread_node *head;
-    head = waiting_threads_q->head;
-    waiting_threads_q->head = head->prev;
-    if (waiting_threads_q->head == NULL)
+    head = waiting_threads_q.head;
+    waiting_threads_q.head = head->prev;
+    if (waiting_threads_q.head == NULL)
     {
-        waiting_threads_q->tail = NULL;
+        waiting_threads_q.tail = NULL;
     }
     else
     {
-        waiting_threads_q->head->next = NULL;
+        waiting_threads_q.head->next = NULL;
     }
     return head;
 }
@@ -131,15 +134,15 @@ thread_node *pop_from_thread_q(void)
 q_node *pop_from_main_q(void)
 {
     q_node *head;
-    head = main_q->head;
-    main_q->head = head->prev;
-    if (main_q->head == NULL)
+    head = main_q.head;
+    main_q.head = head->prev;
+    if (main_q.head == NULL)
     {
-        main_q->tail = NULL;
+        main_q.tail = NULL;
     }
     else
     {
-        main_q->head->next = NULL;
+        main_q.head->next = NULL;
     }
     return head;
 }
@@ -151,15 +154,15 @@ void initQueue(void)
     /*TODO: make sure need to lock here. and if tes, what to do if another thread does insertion
     before initQueue gets the lock*/
     mtx_lock(&q_lock);
-    main_q = (queue *)malloc(sizeof(queue));
-    main_q->head = NULL;
-    main_q->tail = NULL;
-    waiting_threads_q = (threads_queue *)malloc(sizeof(threads_queue));
-    waiting_threads_q->head = NULL;
-    waiting_threads_q->tail = NULL;
+    main_q.head = NULL;
+    main_q.tail = NULL;
+    /*TODO: maka atomic?*/
+    main_q.size = 0;
+    waiting_threads_q.head = NULL;
+    waiting_threads_q.tail = NULL;
+    /*TODO: maka atomic?*/
+    waiting_threads_q.size = 0;
     full_size = 0;
-    main_q_size = 0;
-    waiting_threads_num = 0;
     visited_elements_num = 0;
     mtx_unlock(&q_lock);
 }
@@ -168,31 +171,29 @@ void destroyQueue(void)
 {
     /*TODO: make sure need to lock here*/
     mtx_lock(&q_lock);
-    /*TODO: implement free functions*/
     /*TODO: can we assume free doesn't fail? we are allowed to assume that malloc doesn't*/
     free_main_q();
     free_threads_q();
-    full_size = 0;
-    waiting_threads_num = 0;
-    visited_elements_num = 0;
-    main_q_size = 0;
     mtx_unlock(&q_lock);
     mtx_destroy(&q_lock);
 }
 
 size_t size(void)
 {
-    /*TODO: maybe cahnge to return main_q_size*/
+    /*TODO: maybe cahnge to return main_q.size. ask what is the definition*/
+    /*TODO: make atomic*/
     return full_size;
 }
 
 size_t waiting(void)
 {
-    return waiting_threads_num;
+    /*TODO: make atomic and ask what is the definition*/
+    return waiting_threads_q.size;
 }
 
 size_t visited(void)
 {
+    /*TODO: make atomic and ask what is the definition*/
     return visited_elements_num;
 }
 
@@ -202,7 +203,7 @@ void enqueue(void *elem)
     mtx_lock(&q_lock);
     q_node *new_node;
     thread_node *t_node;
-    if (waiting_threads_num > 0)
+    if (waiting_threads_q.size > 0)
     {
         t_node = pop_from_thread_q();
         t_node->elem = elem;
@@ -211,7 +212,7 @@ void enqueue(void *elem)
         considered to be waiting. It is imporatant that it is being done before waking
         the thread. when does the new thread can run again? only after this function realeases
         the lock or after sending the signal??*/
-        waiting_threads_num--;
+        waiting_threads_q.size--;
         cnd_signal(&(t_node->cv));
     }
     else
@@ -220,7 +221,7 @@ void enqueue(void *elem)
         new_node->elem = elem;
         insert_to_main_q(new_node);
         /*TODO: make the following op atomic. I think not needed acctualy*/
-        main_q_size++;
+        main_q.size++;
     }
     /*TODO: make the following op atomic.*/
     full_size++;
@@ -235,14 +236,14 @@ void *dequeue(void)
     q_node *head;
     void *dequeued_elem;
     bool legal_pop = true;
-    if (main_q_size == 0)
+    if (main_q.size == 0)
     {
         /*Thread needs to got to sleep. inserting it to the threads queue*/
         t_node = (thread_node *)malloc(sizeof(thread_node));
         cnd_init(&(t_node->cv));
         insert_to_threads_q(t_node);
         /*TODO: maybe do this op eariler. make it atomic anyway*/
-        waiting_threads_num++;
+        waiting_threads_q.size++;
         cnd_wait(&(t_node->cv), &q_lock);
         /*Returned from waiting*/
         dequeued_elem = t_node->elem;
@@ -256,7 +257,7 @@ void *dequeue(void)
         dequeued_elem = head->elem;
         free(head);
         /*TODO: make the following op atomic. I think not needed acctualy*/
-        main_q_size--;
+        main_q.size--;
     }
     if (legal_pop)
     {
@@ -271,16 +272,17 @@ void *dequeue(void)
 
 bool tryDequeue(void **elem_pointer)
 {
+    /*TODO: should i do try lock?*/
     mtx_lock(&q_lock);
     q_node *head;
 
-    if (main_q_size > 0)
+    if (main_q.size > 0)
     {
         head = pop_from_main_q();
         *elem_pointer = head->elem;
         free(head);
         /*TODO: make the following op atomic. I think not needed acctualy*/
-        main_q_size--;
+        main_q.size--;
         /*TODO: make the following op atomic*/
         full_size--;
         visited_elements_num++;
