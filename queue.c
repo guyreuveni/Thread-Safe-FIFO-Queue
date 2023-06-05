@@ -46,10 +46,38 @@ mtx_t q_lock;
 
 void insert_to_threads_q(thread_node *node)
 {
+    node->prev = NULL;
+        if (threads_queue->head == NULL)
+        {
+            /*threads queue is empty*/
+            threads_queue->head = node;
+            threads_queue->tail = node;
+            node->next = NULL;
+        }
+        else
+        {
+            (threads_queue->tail)->prev = node;
+            node->next = threads_queue->tail;
+            threads_queue->tail = node;
+        }
 }
 
-void insert_to_main_q(q_node *node)
+void insert_to_main_q(q_node *new_node)
 {
+    new_node->prev = NULL;
+    if (main_q->head == NULL)
+    {
+        /*main queue is empty*/
+        main_q->head = new_node;
+        main_q->tail = new_node;
+        new_node->next = NULL;
+    }
+    else
+    {
+        (main_q->tail)->prev = new_node;
+        new_node->next = main_q->tail;
+        main_q->tail = new_node;
+    }
 }
 
 thread_node *pop_from_thread_q(void)
@@ -64,6 +92,20 @@ thread_node *pop_from_thread_q(void)
     else
     {
         thread_queue->head->next = NULL;
+    }
+}
+
+q_node *pop_from_main_q(void){
+    q_node* head
+    head = main_q->head;
+    main_q->head = head->prev;
+    if (main_q->head == NULL)
+    {
+        main_q->tail = NULL;
+    }
+    else
+    {
+        main_q->head->next = NULL;
     }
 }
 
@@ -136,20 +178,7 @@ void enqueue(void *elem)
     {
         new_node = (q_node *)malloc(sizeof(q_node));
         new_node->elem = elem;
-        new_node->prev = NULL;
-        if (main_q->head == NULL)
-        {
-            /*main queue is empty*/
-            main_q->head = t_node;
-            main_q->tail = t_node;
-            new_node->next = NULL;
-        }
-        else
-        {
-            (main_q->tail)->prev = new_node;
-            new_node->next = main_q->tail;
-            main_q->tail = new_node;
-        }
+        insert_to_main_q(new_node);
         /*TODO: make the following op atomic. I think not needed acctualy*/
         main_q_size++;
     }
@@ -169,41 +198,20 @@ void *dequeue(void)
     {
         /*Thread needs to got to sleep. inserting it to the threads queue*/
         t_node = (thread_node *)malloc(sizeof(thread_node));
-        t_node->prev = NULL;
         cnd_init(&(t_node->cv));
         t_node->elem = NULL;
-        if (threads_queue->head == NULL)
-        {
-            /*threads queue is empty*/
-            threads_queue->head = t_node;
-            threads_queue->tail = t_node;
-            t_node->next = NULL;
-        }
-        else
-        {
-            (threads_queue->tail)->prev = t_node;
-            t_node->next = threads_queue->tail;
-            threads_queue->tail = t_node;
-        }
+        insert_to_threads_q(t_node);
         /*TODO: maybe do this op eariler. make it atomic anyway*/
-        waiting_threads_num++ cnd_wait(&(t_node->cv), &q_lock);
+        waiting_threads_num++;
+        cnd_wait(&(t_node->cv), &q_lock);
         /*Returned from waiting*/
         dequeued_elem = t_node->elem;
         cnd_destroy(&(t_node->cv));
         free(t_node);
     }
     else
-    {
-        head = main_q->head;
-        main_q->head = head->prev;
-        if (main_q->head == NULL)
-        {
-            main_q->tail = NULL;
-        }
-        else
-        {
-            main_q->head->next = NULL;
-        }
+    {   
+        head = pop_from_main_q();
         dequeued_elem = head->elem;
         free(head);
         /*TODO: make the following op atomic. I think not needed acctualy*/
@@ -224,16 +232,7 @@ bool tryDequeue(void **elem_pointer)
 
     if (main_q_size > 0)
     {
-        head = main_q->head;
-        main_q->head = head->prev;
-        if (main_q->head == NULL)
-        {
-            main_q->tail = NULL;
-        }
-        else
-        {
-            main_q->head->next = NULL;
-        }
+        head = pop_from_main_q();
         elem_pointer = &(head->elem);
         free(head);
         /*TODO: make the following op atomic. I think not needed acctualy*/
