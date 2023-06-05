@@ -18,7 +18,7 @@ typedef struct queue
 {
     q_node *head;
     q_node *tail;
-};
+}queue;
 
 typedef struct thread_node
 {
@@ -32,7 +32,7 @@ typedef struct threads_queue
 {
     thread_node *head;
     thread_node *tail;
-};
+}threads_queue;
 
 /*TODO: not nessecirily need to be atomic types*/
 atomic_size_t size = 0;
@@ -93,6 +93,7 @@ thread_node *pop_from_thread_q(void)
     {
         thread_queue->head->next = NULL;
     }
+    return head;
 }
 
 q_node *pop_from_main_q(void){
@@ -107,6 +108,7 @@ q_node *pop_from_main_q(void){
     {
         main_q->head->next = NULL;
     }
+    return head;
 }
 
 void initQueue(void)
@@ -233,7 +235,7 @@ bool tryDequeue(void **elem_pointer)
     if (main_q_size > 0)
     {
         head = pop_from_main_q();
-        elem_pointer = &(head->elem);
+        *elem_pointer = head->elem;
         free(head);
         /*TODO: make the following op atomic. I think not needed acctualy*/
         main_q_size--;
