@@ -7,6 +7,8 @@
 
 #include "queue.h"
 
+/*===================INITIALIZIONS=============================*/
+
 typedef struct q_node
 {
     void *elem;
@@ -45,8 +47,17 @@ atomic_size_t visited_elements_num = 0;
 /*atomic_size_t main_q.size = 0;*/
 queue main_q;
 threads_queue waiting_threads_q;
-
 mtx_t q_lock;
+
+/*HIGH-LEVEL DESCRIPTION:
+main_q is a queue holding all the elements that were inserted to the queue
+and are waiting for threds to deque them. An element which was inserted to the
+queue while there was some thread waiting for it won't get inside this queue.
+waiting_threads_q is a queue of the threads that are waiting for elements to
+get in the queue. when an element is inserted, the head of this queue, if exists,
+will be popped out, woken up, and get the element*/
+
+/*=================== HELPER FUNCTIONS ========================*/
 
 void free_main_q(void)
 {
@@ -91,6 +102,7 @@ void insert_to_threads_q(thread_node *node)
     }
     else
     {
+        /*inserting in the tail*/
         (waiting_threads_q.tail)->prev = node;
         node->next = waiting_threads_q.tail;
         waiting_threads_q.tail = node;
@@ -109,6 +121,7 @@ void insert_to_main_q(q_node *new_node)
     }
     else
     {
+        /*inserting in the tail*/
         (main_q.tail)->prev = new_node;
         new_node->next = main_q.tail;
         main_q.tail = new_node;
@@ -117,11 +130,13 @@ void insert_to_main_q(q_node *new_node)
 
 thread_node *pop_from_thread_q(void)
 {
+    /*popping the head*/
     thread_node *head;
     head = waiting_threads_q.head;
     waiting_threads_q.head = head->prev;
     if (waiting_threads_q.head == NULL)
     {
+        /*threads queue got empty*/
         waiting_threads_q.tail = NULL;
     }
     else
@@ -133,11 +148,13 @@ thread_node *pop_from_thread_q(void)
 
 q_node *pop_from_main_q(void)
 {
+    /*popping the head*/
     q_node *head;
     head = main_q.head;
     main_q.head = head->prev;
     if (main_q.head == NULL)
     {
+        /*main queue got empty*/
         main_q.tail = NULL;
     }
     else
@@ -205,7 +222,10 @@ void enqueue(void *elem)
     thread_node *t_node;
     if (waiting_threads_q.size > 0)
     {
+        /*There is a sleeping thread waiting for an element to get inserted to the queue.
+        popping the oldest one which is the head of the waiting_threads_q*/
         t_node = pop_from_thread_q();
+        /*the sleeping thread will read elem from this field and will deque it*/
         t_node->elem = elem;
         t_node->legal = true;
         /*TODO: make the following op atomic and make sure when exactly a thread is not
@@ -213,10 +233,12 @@ void enqueue(void *elem)
         the thread. when does the new thread can run again? only after this function realeases
         the lock or after sending the signal??*/
         waiting_threads_q.size--;
+        /*waking up the sleeping thread*/
         cnd_signal(&(t_node->cv));
     }
     else
     {
+        /*No thread is waiting. the new element is inserted to main_q*/
         new_node = (q_node *)malloc(sizeof(q_node));
         new_node->elem = elem;
         insert_to_main_q(new_node);
@@ -245,7 +267,7 @@ void *dequeue(void)
         /*TODO: maybe do this op eariler. make it atomic anyway*/
         waiting_threads_q.size++;
         cnd_wait(&(t_node->cv), &q_lock);
-        /*Returned from waiting*/
+        /*Returned from waiting.*/
         dequeued_elem = t_node->elem;
         legal_pop = t_node->legal;
         cnd_destroy(&(t_node->cv));
@@ -261,6 +283,7 @@ void *dequeue(void)
     }
     if (legal_pop)
     {
+        /*the pop is illegal if the thread was woken up by the free method*/
         /*TODO: make the following ops atomic. is it ok to put these ops here? correctness wise
         of the functions that want the size*/
         visited_elements_num++;
@@ -278,10 +301,11 @@ bool tryDequeue(void **elem_pointer)
 
     if (main_q.size > 0)
     {
+        /*there is an element in the queue that is free to be dequeued*/
         head = pop_from_main_q();
         *elem_pointer = head->elem;
         free(head);
-        /*TODO: make the following op atomic. I think not needed acctualy*/
+        /*TODO: make the following op atomic. I think not needed acctualy. when exactly to do it*/
         main_q.size--;
         /*TODO: make the following op atomic*/
         full_size--;
