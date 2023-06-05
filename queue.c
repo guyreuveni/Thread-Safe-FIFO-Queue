@@ -283,6 +283,7 @@ bool tryDequeue(void **elem_pointer)
         main_q_size--;
         /*TODO: make the following op atomic*/
         full_size--;
+        visited_elements_num++;
         mtx_unlock(&q_lock);
         return true;
     }
