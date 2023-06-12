@@ -9,7 +9,7 @@ typedef struct Node {
 } Node;
 
 typedef struct CondNode {
-    thrd_t thread_id;
+    void *data;
     cnd_t cond;
     struct CondNode *next;
 } CondNode;
@@ -21,85 +21,95 @@ typedef struct Queue {
     atomic_int queue_size;
     size_t waiting_count;
     atomic_int visited_count;
-    thrd_t token;
-    bool has_token;
 } Queue;
 
 Queue queue;
 
 void initQueue(void) {
+    /* TODO: take lock here, separate lines. */
+    mtx_init(&queue.queue_mutex, mtx_plain);
+    mtx_lock(&queue.queue_mutex);
     queue.first = queue.end = NULL;
     queue.wait_list_first = queue.wait_list_end = NULL;
-    mtx_init(&queue.queue_mutex, mtx_plain);
     queue.queue_size = 0;
     queue.waiting_count = 0;
     queue.visited_count = 0;
-    queue.has_token = false;
+    mtx_unlock(&queue.queue_mutex);
 }
 
 void destroyQueue(void) {
     mtx_lock(&queue.queue_mutex);
     while(queue.first != NULL) {
-        Node *temp = queue.first;
+        Node *temp_1 = queue.first;
         queue.first = queue.first->next;
-        free(temp);
+        free(temp_1);
     }
     queue.end = NULL;
 
     while(queue.wait_list_first != NULL) {
-        CondNode *temp = queue.wait_list_first;
+        CondNode *temp_2 = queue.wait_list_first;
         queue.wait_list_first = queue.wait_list_first->next;
-        cnd_destroy(&temp->cond);
-        free(temp);
+        /* TODO: add flag to the CondNode and assign it here */
+        cnd_signal(&temp_2->cond);
+        cnd_destroy(&temp_2->cond);
+        free(temp_2);
     }
     queue.wait_list_end = NULL;
     mtx_unlock(&queue.queue_mutex);
     mtx_destroy(&queue.queue_mutex);
 }
 
-void enqueue(const void *data) {
-    Node *new_node = (Node*)malloc(sizeof(Node));
-    new_node->data = (void*)data;
-    new_node->next = NULL;
-
+void enqueue(void *data) {
     mtx_lock(&queue.queue_mutex);
 
-    if(queue.end == NULL) {
-        queue.first = new_node;
-        queue.end = new_node;
-    } else {
-        queue.end->next = new_node;
-        queue.end = new_node;
-    }
-
-    queue.queue_size++;
-
-    if(queue.wait_list_first != NULL && !queue.has_token) {
+    if(queue.wait_list_first != NULL) {
         CondNode *temp = queue.wait_list_first;
+
         queue.wait_list_first = queue.wait_list_first->next;
         if(queue.wait_list_first == NULL) {
             queue.wait_list_end = NULL;
         }
+
+        temp -> data = (void*)data;
+
         queue.waiting_count--;
 
-        queue.token = temp->thread_id;
-        queue.has_token = true;
-
         cnd_signal(&temp->cond);
-        free(temp);
     }
+
+    else {
+        Node *new_node = (Node*)malloc(sizeof(Node));
+        new_node->data = (void*)data;
+        new_node->next = NULL;
+
+        if(queue.end == NULL) {
+            queue.first = new_node;
+            queue.end = new_node;
+        } else {
+            queue.end->next = new_node;
+            queue.end = new_node;
+        }
+
+    }
+
+    queue.queue_size++;
 
     mtx_unlock(&queue.queue_mutex);
 }
 
 void* dequeue(void) {
+    CondNode *new_cond_node = NULL;
+    void *data;
+
     mtx_lock(&queue.queue_mutex);
 
-    if(queue.first == NULL || (queue.has_token && !thrd_equal(queue.token, thrd_current()))) {
-        CondNode *new_cond_node = (CondNode*)malloc(sizeof(CondNode));
-        new_cond_node->thread_id = thrd_current();
+    if(queue.first == NULL) {
+        /* There are no items in the queue from before */
+        new_cond_node = (CondNode*)malloc(sizeof(CondNode));
         cnd_init(&new_cond_node->cond);
         new_cond_node->next = NULL;
+        new_cond_node->data = NULL;
+
 
         if(queue.wait_list_first == NULL) {
             queue.wait_list_first = new_cond_node;
@@ -112,35 +122,27 @@ void* dequeue(void) {
         queue.waiting_count++;
 
         cnd_wait(&new_cond_node->cond, &queue.queue_mutex);
+        /* TODO: check wakeup flag in the CondNode return NULL, if woke up from destroy. */
+        data = new_cond_node->data;
+
+        free(new_cond_node);
     }
 
-    Node *temp_1 = queue.first;
-    void *data = temp_1->data;
-    queue.first = queue.first->next;
-    if(queue.first == NULL) {
-        queue.end = NULL;
-    }
-    free(temp_1);
+    else {
+        /* There are items in the queue from before */
+        Node *temp = queue.first;
+        data = temp->data;
+        queue.first = queue.first->next;
+        if(queue.first == NULL) {
+            queue.end = NULL;
+        }
+        free(temp);
 
+    }
+    /* TODO: what is the definition of waiting ? */
+    /* TODO: make sure what is the definition of size & visited */
     queue.queue_size--;
     queue.visited_count++;
-
-    if(queue.wait_list_first != NULL && queue.queue_size > 0) {
-        CondNode *temp_2 = queue.wait_list_first;
-        queue.wait_list_first = queue.wait_list_first->next;
-        if(queue.wait_list_first == NULL) {
-            queue.wait_list_end = NULL;
-        }
-        queue.waiting_count--;
-
-        queue.token = temp_2->thread_id;
-        queue.has_token = true;
-
-        cnd_signal(&temp_2->cond);
-        free(temp_2);
-    } else {
-        queue.has_token = false;
-    }
 
     mtx_unlock(&queue.queue_mutex);
 
@@ -149,31 +151,25 @@ void* dequeue(void) {
 
 bool tryDequeue(void **data) {
     bool dequeued = false;
+    /* TODO: make sure correctness requirement 2 is relevant to tryDequeue as well */
+    mtx_lock(&queue.queue_mutex);
 
-    if(mtx_trylock(&queue.queue_mutex) == thrd_success) {
-        if(queue.first != NULL && (!queue.has_token || thrd_equal(queue.token, thrd_current()))) {
-            Node *temp = queue.first;
-            *data = temp->data;
-            queue.first = queue.first->next;
-            if(queue.first == NULL) {
-                queue.end = NULL;
-            }
-            free(temp);
-
-            queue.queue_size--;
-            queue.visited_count++;
-
-            if(queue.wait_list_first != NULL) {
-                queue.token = queue.wait_list_first->thread_id;
-            } else {
-                queue.has_token = false;
-            }
-
-            dequeued = true;
+    if(queue.first != NULL) {
+        Node *temp = queue.first;
+        *data = temp->data;
+        queue.first = queue.first->next;
+        if(queue.first == NULL) {
+            queue.end = NULL;
         }
+        free(temp);
 
-        mtx_unlock(&queue.queue_mutex);
+        queue.queue_size--;
+        queue.visited_count++;
+
+        dequeued = true;
     }
+
+    mtx_unlock(&queue.queue_mutex);
 
     return dequeued;
 }
