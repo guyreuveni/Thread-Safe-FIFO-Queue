@@ -39,7 +39,7 @@ typedef struct threads_queue
 
 atomic_size_t full_size = 0;
 atomic_size_t visited_elements_num = 0;
-size_t waiting_threads_num = 0;
+atomic_size_t waiting_threads_num = 0;
 queue main_q;
 threads_queue waiting_threads_q;
 mtx_t q_lock;
@@ -183,17 +183,17 @@ void destroyQueue(void)
 
 size_t size(void)
 {
-    return full_size;
+    return (size_t)full_size;
 }
 
 size_t waiting(void)
 {
-    return waiting_threads_num;
+    return (size_t)waiting_threads_num;
 }
 
 size_t visited(void)
 {
-    return visited_elements_num;
+    return (size_t)visited_elements_num;
 }
 
 void enqueue(void *elem)
