@@ -78,7 +78,6 @@ void free_threads_q(void)
         node->legal = false;
         node->elem = NULL;
         cnd_signal(&(node->cv));
-        free(node);
         node = next;
     }
     waiting_threads_q.tail = NULL;
@@ -184,21 +183,17 @@ void destroyQueue(void)
 
 size_t size(void)
 {
-    return atomic_load(&full_size);
+    return full_size;
 }
 
 size_t waiting(void)
 {
-    size_t waiting_num;
-    mtx_lock(&q_lock);
-    waiting_num = waiting_threads_num;
-    mtx_unlock(&q_lock);
-    return waiting_num;
+    return waiting_threads_num;
 }
 
 size_t visited(void)
 {
-    return atomic_load(&visited_elements_num);
+    return visited_elements_num;
 }
 
 void enqueue(void *elem)
